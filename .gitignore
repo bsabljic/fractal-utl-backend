@@ -1,13 +1,34 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-env/
+*.py[cod]
+*$py.class
+*.so
+.Python
 venv/
-.venv/
-pip-wheel-metadata/
-.eggs/
-*.egg-info/
-dist/
-build/
-.DS_Store
+ENV/
+env/
+.venv
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Data
+*.csv
+*.xlsx
+data/
+uploads/
+
+# Logs
+*.log

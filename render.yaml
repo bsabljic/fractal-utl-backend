@@ -1,9 +1,13 @@
 services:
   - type: web
-    name: fractal-utl-api
+    name: fractal-utl-backend
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     autoDeploy: true
-    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: UVICORN_WORKERS
+        value: "1"
