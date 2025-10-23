@@ -8,3 +8,4 @@ scikit-learn==1.3.2
 scikit-survival==0.22.2
 ecdsa==0.18.0
 requests==2.31.0
+python-multipart==0.0.9
