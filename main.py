@@ -16,13 +16,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Alias mapping za kolone
 RISK_ALIASES = ['risk', 'risk_score', 'prediction', 'prob', 'probability', 'score']
 EVENT_ALIASES = ['event', 'status', 'outcome', 'death', 'recurrence', 'relapse']
 TIME_ALIASES = ['time', 'survival_time', 'followup', 'follow_up', 'duration', 'days', 'months']
 
 def find_column(df: pd.DataFrame, aliases: List[str]) -> Optional[str]:
-    """Find column by checking aliases (case-insensitive)."""
     df_cols_lower = {col.lower(): col for col in df.columns}
     for alias in aliases:
         if alias.lower() in df_cols_lower:
@@ -30,7 +28,6 @@ def find_column(df: pd.DataFrame, aliases: List[str]) -> Optional[str]:
     return None
 
 def validate_and_parse_csv(file_content: bytes) -> Dict:
-    """Parse CSV and validate required columns."""
     try:
         df = pd.read_csv(io.BytesIO(file_content))
     except Exception as e:
@@ -39,12 +36,10 @@ def validate_and_parse_csv(file_content: bytes) -> Dict:
     if df.empty:
         raise HTTPException(status_code=400, detail="CSV file is empty")
     
-    # Find columns by aliases
     risk_col = find_column(df, RISK_ALIASES)
     event_col = find_column(df, EVENT_ALIASES)
     time_col = find_column(df, TIME_ALIASES)
     
-    # Validation
     if not event_col:
         raise HTTPException(
             status_code=400, 
@@ -57,12 +52,10 @@ def validate_and_parse_csv(file_content: bytes) -> Dict:
             detail=f"Time column not found. Expected one of: {TIME_ALIASES}"
         )
     
-    # Extract data
     event = df[event_col].values
     time = df[time_col].values
     risk = df[risk_col].values if risk_col else None
     
-    # Validate data types
     if not np.issubdtype(event.dtype, np.number):
         raise HTTPException(status_code=400, detail="Event column must be numeric (0/1)")
     
@@ -82,44 +75,51 @@ def validate_and_parse_csv(file_content: bytes) -> Dict:
 
 @app.get("/api/ping")
 def ping():
-    """Health check endpoint."""
     return {"status": "ok", "message": "Fractal-UTL API is running"}
 
 @app.post("/api/compare")
 async def compare_models(file: UploadFile = File(...)):
-    """
-    Analyze survival data from uploaded CSV.
-    
-    Expected columns (case-insensitive):
-    - risk/risk_score/prediction (optional)
-    - event/status/outcome (required)
-    - time/survival_time/followup (required)
-    """
-    
-    # Read file
     content = await file.read()
-    
-    # Parse and validate
     data = validate_and_parse_csv(content)
     
-    # Calculate metrics
     if data["has_risk"]:
-        # Full analysis with risk scores
+        # Calculate all metrics
         survival_metrics = analyze_survival_data(
             time=data["time"],
             event=data["event"],
             risk=data["risk"]
         )
         
+        # Calculate confidence intervals for C-index (approximate)
+        n = data["n_samples"]
+        cindex = survival_metrics.get("cindex", 0.5)
+        se = np.sqrt(cindex * (1 - cindex) / n)  # Approximate SE
+        ci_lower = max(0.0, cindex - 1.96 * se)
+        ci_upper = min(1.0, cindex + 1.96 * se)
+        
+        # Calculate improvement over random (0.5)
+        improvement = (cindex - 0.5) * 2  # Scale to [0, 1]
+        
+        # Format response to match frontend expectations
         response = {
             "success": True,
             "n_samples": data["n_samples"],
             "metrics": {
-                "unified": survival_metrics
+                "unified": {
+                    "cindex": survival_metrics.get("cindex", 0.5),
+                    "ci_lower": round(ci_lower, 3),
+                    "ci_upper": round(ci_upper, 3),
+                    "improvement": round(improvement, 3),
+                    "logrank_3group_p": survival_metrics.get("logrank_lgroup_p", 1.0),
+                    "hazard_ratio": survival_metrics.get("hazard_ratio", 1.0),
+                    "auc_roc": survival_metrics.get("auc_roc", 0.5),
+                    "brier_score": survival_metrics.get("brier_score", 0.25),
+                    "sensitivity": survival_metrics.get("sensitivity", 0.5),
+                    "specificity": survival_metrics.get("specificity", 0.5),
+                }
             }
         }
     else:
-        # Basic survival stats without risk
         survival_metrics = analyze_survival_data(
             time=data["time"],
             event=data["event"],
