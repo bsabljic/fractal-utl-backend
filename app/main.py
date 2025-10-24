@@ -161,3 +161,83 @@ async def fetch_and_analyze(request: dict):
         notes="Demo result (URL fetch: missing columns)"
     )
     )
+@app.post("/api/fetch-analyze")
+async def fetch_and_analyze(request: dict):
+    """Fetch CSV from URL and analyze"""
+    url = request.get("url")
+    if not url:
+        return {
+            "cindex": 0.0, 
+            "sens": 0.0, 
+            "spec": 0.0, 
+            "brier": 0.0, 
+            "hr": 0.0, 
+            "ci": (0.0, 0.0),
+            "notes": "Error: No URL provided"
+        }
+    
+    try:
+        import requests
+        from io import StringIO
+        
+        # Fetch CSV from URL
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # Read into pandas
+        content = response.text
+        df = pd.read_csv(StringIO(content), sep="\t" if "\t" in content.split("\n")[0] else ",")
+        
+        # Normalize column names
+        cols = [c.lower().strip() for c in df.columns]
+        has_risk = "risk" in cols
+        has_event = "event" in cols
+        
+        if has_risk and has_event and roc_auc_score is not None:
+            y = df[cols[cols.index("risk")]].astype(float).clip(0, 1)
+            e = df[cols[cols.index("event")]].astype(int).clip(0, 1)
+            
+            # AUC as C-index proxy
+            auc = float(roc_auc_score(e, y))
+            
+            # Brier
+            brier = float(brier_score_loss(e, y))
+            
+            # Sens/spec at 0.5
+            th = 0.5
+            cm = confusion_matrix(e, (y >= th).astype(int))
+            tn, fp, fn, tp = cm.ravel()
+            sens = float(tp / (tp + fn)) if (tp + fn) > 0 else None
+            spec = float(tn / (tn + fp)) if (tn + fp) > 0 else None
+            
+            return {
+                "cindex": round(auc, 3),
+                "sens": round(sens, 3) if sens is not None else None,
+                "spec": round(spec, 3) if spec is not None else None,
+                "brier": round(brier, 3),
+                "hr": None,
+                "ci": None,
+                "notes": f"Analyzed from URL: {url}"
+            }
+    
+    except Exception as e:
+        return {
+            "cindex": 0.0,
+            "sens": 0.0,
+            "spec": 0.0,
+            "brier": 0.0,
+            "hr": 0.0,
+            "ci": (0.0, 0.0),
+            "notes": f"Error: {str(e)}"
+        }
+    
+    # Fallback
+    return {
+        "cindex": 0.704,
+        "sens": 0.78,
+        "spec": 0.71,
+        "brier": 0.186,
+        "hr": 2.41,
+        "ci": (1.52, 3.82),
+        "notes": "Demo result (missing columns)"
+    }
